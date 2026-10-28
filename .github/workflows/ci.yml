@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-package:
+    name: Build, test and package
+    # GitHub-hosted macOS 26 runner (Apple Silicon). See docs/BUILDING.md for the rationale.
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Commit count is used as the build number.
+
+      - name: Select Xcode
+        run: scripts/ci-select-xcode.sh
+
+      - name: Run tests
+        run: scripts/test.sh
+
+      - name: Build universal Release app
+        run: scripts/build-app.sh --universal
+
+      - name: Package DMG
+        run: scripts/package-dmg.sh
+
+      - name: Verify DMG
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          dmg="build/ClipDesk-${version}.dmg"
+          test -s "$dmg"
+          (cd build && shasum -a 256 -c "ClipDesk-${version}.dmg.sha256")
+          mount_point="$(mktemp -d)"
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_point" -quiet
+          ls -la "$mount_point"
+          test -L "$mount_point/Applications"
+          codesign --verify --deep --strict --verbose=2 "$mount_point/ClipDesk.app"
+          lipo -archs "$mount_point/ClipDesk.app/Contents/MacOS/ClipDesk"
+          hdiutil detach "$mount_point" -quiet
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipDesk-dmg
+          path: |
+            build/ClipDesk-*.dmg
+            build/ClipDesk-*.dmg.sha256
+          if-no-files-found: error
+          retention-days: 30

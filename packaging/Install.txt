@@ -1,0 +1,26 @@
+Installing ClipDesk
+===================
+
+1. Drag ClipDesk.app onto the Applications folder in this window.
+2. Eject this disk image.
+3. Open ClipDesk from your Applications folder. It runs in the menu bar
+   (look for the clipboard icon) and opens its history window.
+
+If macOS says ClipDesk "cannot be opened" or "cannot be verified"
+-------------------------------------------------------------------
+This build is not notarized by Apple (it is ad-hoc signed). To open it:
+
+  - macOS 15 or later: try to open ClipDesk once, then go to
+    System Settings > Privacy & Security, scroll down, and click
+    "Open Anyway" next to the ClipDesk message.
+  - macOS 14: Control-click ClipDesk in Applications, choose Open,
+    then click Open in the dialog.
+
+Only do this if you downloaded ClipDesk from its official GitHub
+repository. You can verify the download against the published
+SHA-256 checksum.
+
+Privacy
+-------
+ClipDesk stores your clipboard history only on this Mac, in
+~/Library/Application Support/ClipDesk. It makes no network connections.

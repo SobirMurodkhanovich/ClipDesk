@@ -1,0 +1,3 @@
+import ClipDeskUI
+
+ClipDeskApp.main()

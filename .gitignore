@@ -1,0 +1,40 @@
+# Swift Package Manager / Xcode build output
+.build/
+.swiftpm/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+
+# Packaged products — never commit binaries
+*.app
+*.dmg
+*.zip
+*.ipa
+*.dSYM/
+*.dSYM.zip
+
+# Signing material and secrets
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+.env
+.env.*
+
+# Local ClipDesk data (history database and payloads) — never commit
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+Payloads/
+ClipDeskData/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

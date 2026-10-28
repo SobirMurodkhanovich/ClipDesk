@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and publish (for example v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+
+      - name: Check tag matches VERSION
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "v${version}" != "${TAG}" ]]; then
+            echo "::error::Tag ${TAG} does not match VERSION file (${version})"
+            exit 1
+          fi
+
+      - name: Select Xcode
+        run: scripts/ci-select-xcode.sh
+
+      - name: Run tests
+        run: scripts/test.sh
+
+      # Signing and notarization run only when the repository has the required secrets.
+      # Without them the app is ad-hoc signed and the release notes say so.
+      - name: Import Developer ID certificate
+        id: signing
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
+        run: |
+          if [[ -z "$CERTIFICATE_P12_BASE64" || -z "$SIGNING_IDENTITY" ]]; then
+            echo "No signing secrets configured; building ad-hoc signed app."
+            echo "identity=-" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "$CERTIFICATE_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          echo "identity=$SIGNING_IDENTITY" >> "$GITHUB_OUTPUT"
+
+      - name: Build universal Release app
+        env:
+          CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: scripts/build-app.sh --universal
+
+      - name: Package DMG
+        env:
+          CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: scripts/package-dmg.sh
+
+      - name: Notarize DMG
+        id: notarize
+        if: steps.signing.outputs.identity != '-'
+        env:
+          APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.NOTARIZATION_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.NOTARIZATION_APP_PASSWORD }}
+        run: |
+          if [[ -z "$APPLE_ID" || -z "$APPLE_TEAM_ID" || -z "$APPLE_APP_PASSWORD" ]]; then
+            echo "Notarization secrets not configured; skipping notarization."
+            echo "notarized=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="$(tr -d '[:space:]' < VERSION)"
+          dmg="build/ClipDesk-${version}.dmg"
+          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "$dmg"
+          (cd build && shasum -a 256 "ClipDesk-${version}.dmg" > "ClipDesk-${version}.dmg.sha256")
+          echo "notarized=true" >> "$GITHUB_OUTPUT"
+
+      - name: Write release notes
+        env:
+          IDENTITY: ${{ steps.signing.outputs.identity }}
+          NOTARIZED: ${{ steps.notarize.outputs.notarized }}
+        run: |
+          {
+            echo "ClipDesk ${TAG}"
+            echo
+            echo "Universal (Apple silicon and Intel) build for macOS 14 Sonoma or later."
+            echo
+            if [[ "$IDENTITY" == "-" ]]; then
+              echo "**This build is ad-hoc signed and not notarized.** macOS Gatekeeper will block the first launch."
+              echo "Open it once, then use System Settings > Privacy & Security > Open Anyway. See the README for details."
+            elif [[ "$NOTARIZED" == "true" ]]; then
+              echo "Signed with Developer ID and notarized by Apple."
+            else
+              echo "Signed with Developer ID but not notarized."
+            fi
+            echo
+            echo "SHA-256: \`$(cut -d' ' -f1 build/ClipDesk-*.dmg.sha256)\`"
+          } > build/release-notes.md
+          cat build/release-notes.md
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" build/ClipDesk-*.dmg build/ClipDesk-*.dmg.sha256 \
+            --title "ClipDesk ${TAG}" --notes-file build/release-notes.md --verify-tag
