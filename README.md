@@ -108,7 +108,7 @@ The project is a Swift package. Open `Package.swift` in Xcode to edit, build and
 - Age is measured from an item's **last activity** (copied again, or copied back from ClipDesk).
 - **Favorites are never removed automatically.** The size limit counts non-favorite items.
 - **Duplicates:** copying identical content again moves the existing item to the top, keeps its first-copied date and increments its copy count. If the same text, image or files arrive with different formats (for example plain text, then rich text), the stored formats are replaced with the newest ones.
-- Retention runs after every capture, at launch and hourly. Orphaned payload folders are removed at launch.
+- Retention runs after every capture, at launch, hourly, and immediately when you change these settings. Orphaned payload folders are removed during the same maintenance.
 
 ## Known limitations
 

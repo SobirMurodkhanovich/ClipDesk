@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Commit count is used as the build number.
 
@@ -53,7 +53,7 @@ jobs:
           hdiutil detach "$mount_point" -quiet
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ClipDesk-dmg
           path: |
